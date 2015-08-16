@@ -1,0 +1,193 @@
+---
+title: 'Reproducible Research: Peer Assignment 2'
+author: 'Vimala Venugopalan-Mark'
+date: "August 11, 2015"
+output: 
+        html_document:
+                keep_md: true
+---
+
+#Synopsis
+
+This report will analyze how storms and severe weather events can cause problems in public health and ecomonic problems for communities and muncipalities.  Many of these storm events can result  fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration’s (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+We will be exploring the NOAA Storm Database to answer the following questions related to weather events from the year 1990 through 2011 :
+
+* Across the United States, which types of events are most harmful with respect to population health?
+* Across the United States, which types of events have the greatest economic consequences?
+During the analysis it was found that the most harmful event is the tornado causing with 5633 deaths and 91346 injuries. In terms of economical loses, floods has been the responsible of most of the properties loses, while drought has been the greater contributor to crops loses.
+
+
+```{r}
+echo="TRUE"
+options(scipen = 1)  
+library(R.utils)
+library(ggplot2)
+library(plyr)
+require(gridExtra)
+```
+
+#Data Processing
+
+Downloading and unzipping storm data from U.S. National Ocenaic and Atmoshpheric Adminsitration database
+
+```{r}
+
+setwd("~/Documents/DataAnalysis/ReproducibleResearch")
+
+if (!file.exists("StormData.csv.bz2")) {
+    fileURL <- 'https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2'
+    download.file(fileURL, destfile='StormData.csv.bz2', method = 'curl')
+}
+stormData <- read.csv(bzfile('StormData.csv.bz2'),header=TRUE, stringsAsFactors = FALSE)
+downloadedData <- date()
+
+```
+
+
+## Analysis Storm Data information 
+
+Displaying some basic analysis on Storm Information from the data frame stormData
+
+```{r}
+
+stormColData <- dim(stormData)[2]
+stormRowData <- dim(stormData)[1]
+
+print (sprintf("There are %d rows and %d columns in the Storm data set. The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of reliable/complete records.", stormRowData, stormColData) )
+            
+
+summary (stormData)
+head (stormData)
+names (stormData)
+```
+
+The histogram will display a breakdown of storm data by year.
+
+```{r}
+if (stormColData == 37) {
+    stormData$year <- as.numeric(format(as.Date(stormData$BGN_DATE, format = "%m/%d/%Y %H:%M:%S"), "%Y"))
+}
+
+hist(stormData$year, breaks=30)
+```
+
+Based on the histgram above,  the number of events between 1950 to 1980 is relatively small compared to the period 1990 to 2011.  We will consider the period 1990 through 2011 as best track record period in the data set.
+
+From all the columns only several of them will be relevant to our analysis.  There are the following columns.
+        * EVTYPE        : the type weather event
+        * FATALITIES    : the number of fatalities
+        * INJURIES      : the number of injuries
+        * PROPDMG       : the amount of property damage in US dollars
+        * PROPDMGEXP    : a multiplier got PROPDMG 
+        * CROPDMG       : the amount of crop damage in US dollars
+        * CROPDMGEXP:      : a multiplier for CROPDMG
+
+
+```
+
+## Comparing the economic variable impact with Property Damage and Crop Damage
+
+The values of property damage (PROPDMG) and crops (CROPDMG) are related to PROPDMGEXP and CROPDMGEXP variables, in this way: B ( bilion), h or H (houndre), K (kilo), m or M (million).  For the crop and property damage for between the years 1990 through 2011.
+
+The property damage values (TOTALPROPDMG contains to total property damage cost)
+
+```{r}
+stormData$PROPDMGEXP <- as.character(stormData$PROPDMGEXP)
+stormData$PROPDMGEXP[toupper(stormData$PROPDMGEXP) == 'H'] <- "2"
+stormData$PROPDMGEXP[toupper(stormData$PROPDMGEXP) == 'K'] <- "3"
+stormData$PROPDMGEXP[toupper(stormData$PROPDMGEXP) == 'M'] <- "6"
+stormData$PROPDMGEXP[toupper(stormData$PROPDMGEXP) == 'B'] <- "9"
+stormData$PROPDMGEXP <- as.numeric(stormData$PROPDMGEXP)
+stormData$PROPDMGEXP[is.na(stormData$PROPDMGEXP)] <- 0
+stormData$TOTALPROPDMG <- stormData$PROPDMG * 10^stormData$PROPDMGEXP
+```
+
+The crop damage values (TOTALCROPDMG contains to total crop damage cost)
+
+```{r}
+stormData$CROPDMGEXP <- as.character(stormData$CROPDMGEXP)
+stormData$CROPDMGEXP[toupper(stormData$CROPDMGEXP) == 'H'] <- "2"
+stormData$CROPDMGEXP[toupper(stormData$CROPDMGEXP) == 'K'] <- "3"
+stormData$CROPDMGEXP[toupper(stormData$CROPDMGEXP) == 'M'] <- "6"
+stormData$CROPDMGEXP[toupper(stormData$CROPDMGEXP) == 'B'] <- "9"
+stormData$CROPDMGEXP <- as.numeric(stormData$CROPDMGEXP)
+stormData$CROPDMGEXP[is.na(stormData$CROPDMGEXP)] <- 0
+stormData$TOTALCROPDMG <- stormData$CROPDMG * 10^stormData$CROPDMGEXP
+
+```
+
+## Results
+
+### 1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+1.1  To present the results we will divide the data by fatalities and injuries.  Performing the aggregate function to obtain all fatalities by specific event and then taking the top 10 events in descending order.
+
+```{r}
+sumFatalities <- aggregate(stormData$FATALITIES, by = list(stormData$EVTYPE), "sum")
+names(sumFatalities) <- c("Event", "Fatalities")
+sumFatalities <- sumFatalities[order(-sumFatalities$Fatalities), ][1:10, ]
+sumFatalities
+```
+
+1.2 Performing the aggregate function to obtain all injuries by specific event and then taking the top 10 events in descending order.
+
+```{r}
+sumInjuries <- aggregate(stormData$INJURIES, by = list(stormData$EVTYPE), "sum")
+names(sumInjuries) <- c("Event", "Injuries")
+sumInjuries <- sumInjuries[order(-sumInjuries$Injuries), ][1:10, ]
+sumInjuries
+```
+
+1.3  Using a boxplot to graph the top 10 events by Fatalities and Injuries
+
+```{r}
+par(mfrow = c(1, 2), mar = c(12, 5, 3, 2), mgp = c(3, 1, 0), cex = 0.8, las = 3)
+barplot(sumFatalities$Fatalities, names.arg = sumFatalities$Event, col = 'orange',
+        main = 'Top 10 Weather Events for Fatalities', ylab = 'Number of Fatalities')
+barplot(sumInjuries$Injuries, names.arg = sumInjuries$Event, col = 'green',
+        main = 'Top 10 Weather Events for Injuries', ylab = 'Number of Injuries')
+```
+
+2. Across the United States, which types of events have the greatest economic consequences?
+
+2.1  As with the approach to find the top 10 events for property and crop damages we will use the same approach for the economic consequences.
+
+* Events that caused most cost in damage to properties
+
+```{r}
+sumPropDmg <- aggregate(stormData$TOTALPROPDMG, by = list(stormData$EVTYPE), "sum")
+names(sumPropDmg) <- c("Event", "Cost")
+sumPropDmg <- sumPropDmg[order(-sumPropDmg$Cost), ][1:10, ]
+sumPropDmg
+```
+
+* Events that caused the most cost in damage to crops.
+
+```{r}
+sumCropDmg <- aggregate(stormData$TOTALCROPDMG, by = list(stormData$EVTYPE), "sum")
+names(sumCropDmg) <- c("Event", "Cost")
+sumCropDmg <- sumCropDmg[order(-sumCropDmg$Cost), ][1:10, ]
+sumCropDmg
+```
+
+2.2 
+
+```{r}
+library(reshape2)
+library(ggplot2)
+fatalitiesAndDamage <- merge(x = sumPropDmg, y = sumCropDmg, by = "Event", all = TRUE)
+fatalitiesAndDamage <- melt(fatalitiesAndDamage, id.vars = 'Event')
+ggplot(fatalitiesAndDamage, aes(Event, value)) +   
+        geom_bar(aes(fill = variable), position = "dodge", stat="identity") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1)) + xlab("Event Type") + 
+        ylab("Damage, USD") + ggtitle("Crop/Property damage  by type")
+```
+
+Based on the histograms above, we find that flood and hurricane/typhoon cause most property damage; drought and flood causes most crop damage in the United States from 1950 to 2011.
+
+##Conclusion
+
+From these data, we found that excessive heat and tornado are most harmful with respect to population health, while flood, drought, and hurricane/typhoon have the greatest economic impact.
